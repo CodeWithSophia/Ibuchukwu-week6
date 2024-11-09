@@ -1,26 +1,40 @@
 #!/bin/bash
 
-# Load version and size from params.yml
-version=$(grep '^version:' params.yml | awk '{print $2}' | tr -d '"')
-size=$(grep "  \"$version\":" params.yml | awk '{print $2}' | tr -d '"')
+yml_file="params.yml"
+#reading the version and size from the params.yml file
+version=$(yq e ".version" "$yml_file")
+size=$(yq e ".size.\"$version\"" "$yml_file")
 
-# Define the API endpoint 
-url="https://jsonplaceholder.typicode.com/photos/data?version=$version&size=$size"
+echo "The size for the version $version is $size"
 
-# Fetch data from the API using curl and format it with jq
-new_data=$(curl -s "$url" | jq ".[:$size]")
+data_file="datahub/data.json"
+new_data="datahub/temp_data.json"
 
-# Check if the datahub/data.json file exists, and compare data if it does
-if [ -f "datahub/data.json" ]; then
-    # Compare the current and newly fetched data
-    current_data=$(jq . datahub/data.json)
-    if [ "$new_data" == "$current_data" ]; then
-        echo "No changes; data has not changed"
-        exit 0
-    fi
+#check if the version exists
+if [[ -n "$size" ]]; then
+        echo "The size for the version $version is $size"
+
+        curl -s "https://jsonplaceholder.typicode.com/photos" | jq ".[:$size}" > "$new_data"
+        if [[ -f "$data_file" ]]; then
+                if cmp -s "$new_data" "$data_file"; then
+                        echo "No changes; data has not changed"
+                        rm "$new_data"
+                        exit 0
+                else
+                        echo "data is different"
+                        mv "$new_data" "$data_file"
+                        echo "updated the data.json"
+                fi
+        else
+                echo "No existing data file found"
+                mv "$new_data" "$data_file"
+                echo "Created new data.json file"
+        fi
+else
+        echo "No size for the version $version"
+        rm "$new_data"
+        exit 1
 fi
-
-# If data is different or datahub/data.json does not exist, save the new data
-echo "$new_data" > datahub/data.json
-echo "Data has been updated in datahub/data.json"
+echo "The current data version is $version"
+echo "The data size for the version is $size"
 
